@@ -11,10 +11,11 @@ import random
 
 # ── Pin definitions ──
 CS  = Pin(17, Pin.OUT, value=1)
-DC  = Pin(16, Pin.OUT, value=0)
-BL  = PWM(Pin(20))
+DC  = Pin(20, Pin.OUT, value=0)   # Pico Display 2.0: DC on GP20
+BL  = PWM(Pin(16))                 # Pico Display 2.0: BL on GP16
 BL.freq(1000)
 BL.duty_u16(0)
+RST = Pin(21, Pin.OUT, value=1)    # Pico Display 2.0: RST on GP21
 
 LED_R = PWM(Pin(6));  LED_R.freq(1000)
 LED_G = PWM(Pin(7));  LED_G.freq(1000)
@@ -38,6 +39,10 @@ def set_window(x, y, w, h):
 
 # ── Init display (Pimoroni st7789.cpp exact sequence) ──
 def init_display():
+    # Hardware reset
+    RST.value(0); time.sleep_ms(20)
+    RST.value(1); time.sleep_ms(100)
+    
     cmd(0x01)  # SWRESET
     time.sleep_ms(150)
     
