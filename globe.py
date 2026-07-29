@@ -1,9 +1,8 @@
 """
-Tellus globe — instant startup, renders frames progressively
-Shows globe immediately after first frame, continues refining
+Tellus globe — reliable Python upscale, serial heartbeat
 """
 from machine import Pin, SPI, PWM
-import time, framebuf, math, gc, array, micropython
+import time, framebuf, math, gc, array
 
 CS  = Pin(9,  Pin.OUT, value=1)
 DC  = Pin(8,  Pin.OUT, value=0)
@@ -17,14 +16,12 @@ def cmd(b, *d):
     DC(0); CS(0); spi.write(bytes([b])); CS(1)
     if d: DC(1); CS(0); spi.write(bytes(d)); CS(1)
 
-# Init display
 RST(0); time.sleep_ms(50); RST(1); time.sleep_ms(150)
 cmd(0xEF); cmd(0xEB, 0x14)
 cmd(0xFE); cmd(0xEF); cmd(0xEB, 0x14)
 cmd(0x3A, 0x55); cmd(0x36, 0x00); cmd(0x21)
 cmd(0x11); time.sleep_ms(120)
 cmd(0x29); time.sleep_ms(100)
-BL.duty_u16(65535)
 
 W, H, FW, FH = 240, 240, 120, 120
 buf = bytearray(W * H * 2)
@@ -37,7 +34,6 @@ def rgb565(r,g,b):
 # ── Earth texture ──
 TX_W, TX_H = 180, 90
 tex = bytearray(TX_W * TX_H)
-
 CONTINENTS = [
     (0.18,0.28,0.12,0.18,0.3),(0.15,0.35,0.08,0.12,-0.2),
     (0.22,0.0,0.06,0.20,0.1),(0.25,-0.08,0.04,0.12,-0.1),
@@ -69,11 +65,11 @@ for s in range(256):
     OCEAN[s]=rgb565(int(10*f),int(40*f),int(120*f))
 gc.collect()
 
-# ── Render N frames ──
+# ── Render frames ──
 N=8; FS=FW*FH*2
 FRAMES=[None]*N
 
-def render_frame(fi):
+for fi in range(N):
     rot=fi*TX_W//N
     fb_data=bytearray(FS)
     fb2=framebuf.FrameBuffer(fb_data,FW,FH,framebuf.RGB565)
@@ -95,35 +91,28 @@ def render_frame(fi):
     FRAMES[fi]=fb_data
     gc.collect()
 
-# ── Viper upscale ──
-@micropython.viper
-def upscale2x(dst: ptr8, src: ptr8, fw: int, w: int):
-    for sy in range(fw):
-        sr=sy*fw*2; dr0=sy*2*w*2; dr1=dr0+w*2
-        for sx in range(fw):
-            so=sr+sx*2; lo=src[so]; hi=src[so+1]
+# ── Python upscale (reliable, slower but works) ──
+def upscale2x():
+    src = FRAMES[frame % N]
+    for sy in range(FH):
+        sr=sy*FW*2; dr0=sy*2*W*2; dr1=dr0+W*2
+        for sx in range(FW):
+            so=sr+sx*2
+            lo=src[so]; hi=src[so+1]
             do0=dr0+sx*4; do1=dr1+sx*4
-            dst[do0]=lo; dst[do0+1]=hi; dst[do0+2]=lo; dst[do0+3]=hi
-            dst[do1]=lo; dst[do1+1]=hi; dst[do1+2]=lo; dst[do1+3]=hi
+            buf[do0]=lo; buf[do0+1]=hi; buf[do0+2]=lo; buf[do0+3]=hi
+            buf[do1]=lo; buf[do1+1]=hi; buf[do1+2]=lo; buf[do1+3]=hi
 
-# Show frame 0 immediately
-render_frame(0)
-upscale2x(buf, FRAMES[0], FW, W)
-cmd(0x2C); CS(0); DC(1); spi.write(buf); CS(1)
-
-# Render remaining frames while showing frame 0
-for fi in range(1, N):
-    BL.duty_u16(0); time.sleep_ms(30); BL.duty_u16(65535)
-    render_frame(fi)
-
-# ── Animation loop ──
+# ── Animation ──
 frame=0; fc=0; ft=time.ticks_ms()
+print('GLOBE')
 
 while True:
-    upscale2x(buf, FRAMES[frame%N], FW, W)
+    upscale2x()
     cmd(0x2C); CS(0); DC(1); spi.write(buf); CS(1)
     frame+=1; fc+=1
     
     now=time.ticks_ms()
     if time.ticks_diff(now,ft)>=3000:
-        pass  # silent or print via serial
+        print('.', end='')
+        fc=0; ft=now
