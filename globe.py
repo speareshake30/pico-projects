@@ -36,6 +36,13 @@ def rgb565(r,g,b):
 
 # ── Realistic Earth texture (180×90) ──
 print('Earth texture...')
+
+# Flash backlight to show we're alive during startup
+for _ in range(3):
+    BL.duty_u16(0); time.sleep_ms(100)
+    BL.duty_u16(65535); time.sleep_ms(100)
+BL.duty_u16(65535)
+
 TX_W, TX_H = 180, 90
 tex = bytearray(TX_W * TX_H)
 
